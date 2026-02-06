@@ -224,6 +224,32 @@ def _potrace_trace_bmp(gray_img: Image.Image, simplify: float) -> str | None:
 # High-level driver
 # ---------------------------------------------------------------------------
 
+def vectorize_pil_image(
+    img: Image.Image,
+    mode: str = "outline",
+    n_colors: int = 8,
+    simplify: float = 0.3,
+    threshold: int | None = None,
+) -> str:
+    """Vectorize an in-memory PIL Image and return the SVG string.
+
+    This is the core conversion entry point used by both the CLI and the web
+    dashboard.
+    """
+    img = preprocess_image(img)
+
+    if _vtracer_available():
+        return vectorize_with_vtracer(img, mode, simplify, n_colors, threshold)
+    elif _potrace_available():
+        print("Note: vtracer not found, falling back to potrace.", file=sys.stderr)
+        return vectorize_with_potrace(img, mode, simplify, n_colors, threshold)
+    else:
+        raise RuntimeError(
+            "No vectorization backend available. "
+            "Install vtracer (pip install vtracer) or potrace (apt install potrace)."
+        )
+
+
 def convert_image(
     input_path: str,
     output_path: str,
@@ -245,19 +271,7 @@ def convert_image(
         )
 
     img = Image.open(in_path)
-    img = preprocess_image(img)
-
-    use_vtracer = _vtracer_available()
-    if use_vtracer:
-        svg_content = vectorize_with_vtracer(img, mode, simplify, n_colors, threshold)
-    elif _potrace_available():
-        print("Note: vtracer not found, falling back to potrace.", file=sys.stderr)
-        svg_content = vectorize_with_potrace(img, mode, simplify, n_colors, threshold)
-    else:
-        raise RuntimeError(
-            "No vectorization backend available. "
-            "Install vtracer (pip install vtracer) or potrace (apt install potrace)."
-        )
+    svg_content = vectorize_pil_image(img, mode, n_colors, simplify, threshold)
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)

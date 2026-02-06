@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vectorize &mdash; Image to SVG</title>
+<style>
+/* ------------------------------------------------------------------ */
+/* Reset & base                                                       */
+/* ------------------------------------------------------------------ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0f1117;
+  --surface:   #1a1d27;
+  --surface2:  #242736;
+  --border:    #2e3245;
+  --text:      #e2e4ed;
+  --text-dim:  #8b8fa3;
+  --accent:    #6c5ce7;
+  --accent-h:  #7c6df7;
+  --success:   #00b894;
+  --danger:    #e17055;
+  --radius:    12px;
+  --radius-sm: 8px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ------------------------------------------------------------------ */
+/* Layout                                                             */
+/* ------------------------------------------------------------------ */
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 32px;
+}
+header .logo {
+  width: 40px; height: 40px;
+  background: var(--accent);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+}
+header .logo svg { width: 22px; height: 22px; fill: #fff; }
+header h1 { font-size: 22px; font-weight: 700; }
+header .subtitle { color: var(--text-dim); font-size: 14px; margin-left: auto; }
+
+.grid {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .grid { grid-template-columns: 1fr; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Cards                                                              */
+/* ------------------------------------------------------------------ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.card h2 {
+  font-size: 15px; font-weight: 600;
+  margin-bottom: 18px;
+  display: flex; align-items: center; gap: 8px;
+}
+.card h2 .badge {
+  font-size: 11px; font-weight: 500;
+  background: var(--accent);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Drop zone                                                          */
+/* ------------------------------------------------------------------ */
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  margin-bottom: 20px;
+  position: relative;
+}
+.dropzone:hover, .dropzone.drag-over {
+  border-color: var(--accent);
+  background: rgba(108,92,231,.06);
+}
+.dropzone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+}
+.dropzone .icon { font-size: 36px; margin-bottom: 8px; color: var(--text-dim); }
+.dropzone p { color: var(--text-dim); font-size: 14px; }
+.dropzone .formats { font-size: 12px; color: var(--text-dim); margin-top: 6px; opacity: .7; }
+
+.file-preview {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  margin-bottom: 20px;
+}
+.file-preview.visible { display: flex; }
+.file-preview img {
+  width: 56px; height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.file-preview .info { flex: 1; min-width: 0; }
+.file-preview .info .name {
+  font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.file-preview .info .meta { font-size: 12px; color: var(--text-dim); }
+.file-preview .remove {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 18px; padding: 4px 8px; border-radius: 6px;
+}
+.file-preview .remove:hover { background: var(--surface); color: var(--danger); }
+
+/* ------------------------------------------------------------------ */
+/* Form controls                                                      */
+/* ------------------------------------------------------------------ */
+.field { margin-bottom: 16px; }
+.field label {
+  display: block; font-size: 13px; font-weight: 500;
+  margin-bottom: 6px; color: var(--text-dim);
+}
+
+.mode-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.mode-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+  color: var(--text);
+}
+.mode-btn:hover { border-color: var(--accent); }
+.mode-btn.active {
+  border-color: var(--accent);
+  background: rgba(108,92,231,.12);
+}
+.mode-btn .mode-name { font-size: 13px; font-weight: 600; }
+.mode-btn .mode-desc { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface2);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg);
+}
+.range-row { display: flex; align-items: center; gap: 10px; }
+.range-row .val {
+  font-size: 13px; font-weight: 600;
+  min-width: 36px; text-align: right;
+}
+
+input[type="number"] {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+}
+input[type="number"]:focus { outline: none; border-color: var(--accent); }
+
+.threshold-field { display: none; }
+.threshold-field.visible { display: block; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%;
+  padding: 12px 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  transition: background .2s, transform .1s;
+}
+.btn:active { transform: scale(.98); }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-h); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ------------------------------------------------------------------ */
+/* Result panel                                                       */
+/* ------------------------------------------------------------------ */
+.result-area { min-height: 400px; }
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 400px; color: var(--text-dim); text-align: center;
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: .4; }
+.empty-state p { font-size: 14px; }
+
+.result-content { display: none; }
+.result-content.visible { display: block; }
+
+.svg-preview {
+  background: repeating-conic-gradient(#1e2030 0% 25%, #262938 0% 50%) 50% / 20px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 300px;
+  max-height: 500px;
+  overflow: auto;
+  margin-bottom: 16px;
+}
+.svg-preview img {
+  max-width: 100%;
+  max-height: 460px;
+}
+
+.result-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stat {
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  text-align: center;
+}
+.stat .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+.stat .value { font-size: 18px; font-weight: 700; margin-top: 4px; }
+.stat .value.green { color: var(--success); }
+
+.result-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.btn-secondary {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.btn-secondary:hover { border-color: var(--accent); background: rgba(108,92,231,.08); }
+
+/* ------------------------------------------------------------------ */
+/* History                                                            */
+/* ------------------------------------------------------------------ */
+.history-list { margin-top: 16px; }
+.history-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  transition: background .15s;
+  cursor: pointer;
+}
+.history-item:hover { background: var(--surface2); }
+.history-item .thumb {
+  width: 40px; height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+}
+.history-item .details { flex: 1; min-width: 0; }
+.history-item .details .name {
+  font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.history-item .details .meta { font-size: 11px; color: var(--text-dim); }
+.history-item .mode-tag {
+  font-size: 11px; padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Spinner                                                            */
+/* ------------------------------------------------------------------ */
+.spinner { display: none; }
+.spinner.visible { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 400px; }
+.spinner .ring {
+  width: 40px; height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner p { margin-top: 14px; font-size: 14px; color: var(--text-dim); }
+
+/* ------------------------------------------------------------------ */
+/* Toast                                                              */
+/* ------------------------------------------------------------------ */
+.toast-container {
+  position: fixed; bottom: 24px; right: 24px;
+  display: flex; flex-direction: column-reverse; gap: 8px;
+  z-index: 1000;
+}
+.toast {
+  padding: 12px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500;
+  animation: toast-in .3s ease;
+  max-width: 360px;
+}
+.toast.error { background: var(--danger); color: #fff; }
+.toast.success { background: var(--success); color: #fff; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px); } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <h1>Vectorize</h1>
+    <span class="subtitle">Raster to SVG converter</span>
+  </header>
+
+  <div class="grid">
+
+    <!-- ============================================================ -->
+    <!-- Left column: controls                                        -->
+    <!-- ============================================================ -->
+    <div class="controls">
+
+      <!-- Upload card -->
+      <div class="card" style="margin-bottom:20px">
+        <h2>Upload Image</h2>
+
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" accept=".png,.jpg,.jpeg,.webp">
+          <div class="icon">&#8686;</div>
+          <p>Drop an image here or click to browse</p>
+          <div class="formats">PNG, JPEG, WEBP &mdash; up to 32 MB</div>
+        </div>
+
+        <div class="file-preview" id="filePreview">
+          <img id="thumbImg" src="" alt="">
+          <div class="info">
+            <div class="name" id="fileName"></div>
+            <div class="meta" id="fileMeta"></div>
+          </div>
+          <button class="remove" id="removeFile" title="Remove">&times;</button>
+        </div>
+
+        <!-- Mode selector -->
+        <div class="field">
+          <label>Vectorization Mode</label>
+          <div class="mode-selector" id="modeSelector">
+            <div class="mode-btn active" data-mode="outline">
+              <div class="mode-name">Outline</div>
+              <div class="mode-desc">B/W edges</div>
+            </div>
+            <div class="mode-btn" data-mode="color">
+              <div class="mode-name">Color</div>
+              <div class="mode-desc">Color layers</div>
+            </div>
+            <div class="mode-btn" data-mode="detailed">
+              <div class="mode-name">Detailed</div>
+              <div class="mode-desc">High fidelity</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Simplify -->
+        <div class="field">
+          <label>Simplification</label>
+          <div class="range-row">
+            <input type="range" id="simplify" min="0" max="1" step="0.05" value="0.3">
+            <span class="val" id="simplifyVal">0.30</span>
+          </div>
+        </div>
+
+        <!-- Colors (shown for color/detailed) -->
+        <div class="field" id="colorsField" style="display:none">
+          <label>Colors</label>
+          <input type="number" id="colors" min="2" max="64" value="8">
+        </div>
+
+        <!-- Threshold (shown for outline) -->
+        <div class="field threshold-field visible" id="thresholdField">
+          <label>Binarization Threshold (0-255, optional)</label>
+          <input type="number" id="threshold" min="0" max="255" placeholder="auto (128)">
+        </div>
+
+        <button class="btn btn-primary" id="convertBtn" disabled>Convert to SVG</button>
+      </div>
+
+      <!-- History card -->
+      <div class="card">
+        <h2>History <span class="badge" id="historyCount">0</span></h2>
+        <div class="history-list" id="historyList">
+          <div style="color:var(--text-dim); font-size:13px; text-align:center; padding:20px 0;">
+            No conversions yet
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Right column: result                                         -->
+    <!-- ============================================================ -->
+    <div class="card result-area">
+      <h2>Result</h2>
+
+      <div class="empty-state" id="emptyState">
+        <div class="icon">&#9881;</div>
+        <p>Upload an image and click Convert<br>to see your SVG here</p>
+      </div>
+
+      <div class="spinner" id="spinner">
+        <div class="ring"></div>
+        <p>Vectorizing&hellip;</p>
+      </div>
+
+      <div class="result-content" id="resultContent">
+        <div class="svg-preview" id="svgPreview"></div>
+
+        <div class="result-stats">
+          <div class="stat">
+            <div class="label">Original</div>
+            <div class="value" id="statOriginal">-</div>
+          </div>
+          <div class="stat">
+            <div class="label">SVG</div>
+            <div class="value" id="statSvg">-</div>
+          </div>
+          <div class="stat">
+            <div class="label">Ratio</div>
+            <div class="value green" id="statRatio">-</div>
+          </div>
+        </div>
+
+        <div class="result-actions">
+          <a class="btn btn-secondary" id="downloadBtn" download>Download SVG</a>
+          <button class="btn btn-secondary" id="copyBtn">Copy SVG Code</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /grid -->
+
+</div><!-- /app -->
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+/* ================================================================== */
+/* State                                                              */
+/* ================================================================== */
+let selectedFile = null;
+let currentMode = "outline";
+let history = [];
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+/* ================================================================== */
+/* Toast helper                                                       */
+/* ================================================================== */
+function toast(msg, type = "success") {
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+/* ================================================================== */
+/* File size formatting                                               */
+/* ================================================================== */
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+/* ================================================================== */
+/* Drag-and-drop + file input                                         */
+/* ================================================================== */
+const dropzone = $("#dropzone");
+const fileInput = $("#fileInput");
+
+["dragenter", "dragover"].forEach(evt =>
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add("drag-over"); })
+);
+["dragleave", "drop"].forEach(evt =>
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove("drag-over"); })
+);
+
+dropzone.addEventListener("drop", e => {
+  const file = e.dataTransfer.files[0];
+  if (file) selectFile(file);
+});
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) selectFile(fileInput.files[0]);
+});
+
+function selectFile(file) {
+  const ext = "." + file.name.split(".").pop().toLowerCase();
+  if (![".png", ".jpg", ".jpeg", ".webp"].includes(ext)) {
+    toast("Unsupported format. Use PNG, JPEG, or WEBP.", "error");
+    return;
+  }
+  selectedFile = file;
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      $("#thumbImg").src = e.target.result;
+      $("#fileName").textContent = file.name;
+      $("#fileMeta").textContent = `${img.width} x ${img.height}  \u00B7  ${fmtSize(file.size)}`;
+      $("#filePreview").classList.add("visible");
+      dropzone.style.display = "none";
+      $("#convertBtn").disabled = false;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+$("#removeFile").addEventListener("click", () => {
+  selectedFile = null;
+  fileInput.value = "";
+  $("#filePreview").classList.remove("visible");
+  dropzone.style.display = "";
+  $("#convertBtn").disabled = true;
+});
+
+/* ================================================================== */
+/* Mode selector                                                      */
+/* ================================================================== */
+$$("#modeSelector .mode-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $$("#modeSelector .mode-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentMode = btn.dataset.mode;
+    // Toggle fields
+    if (currentMode === "outline") {
+      $("#colorsField").style.display = "none";
+      $("#thresholdField").classList.add("visible");
+    } else {
+      $("#colorsField").style.display = "";
+      $("#thresholdField").classList.remove("visible");
+    }
+  });
+});
+
+/* ================================================================== */
+/* Simplify slider                                                    */
+/* ================================================================== */
+$("#simplify").addEventListener("input", e => {
+  $("#simplifyVal").textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+/* ================================================================== */
+/* Convert                                                            */
+/* ================================================================== */
+$("#convertBtn").addEventListener("click", async () => {
+  if (!selectedFile) return;
+
+  // UI states
+  $("#emptyState").style.display = "none";
+  $("#resultContent").classList.remove("visible");
+  $("#spinner").classList.add("visible");
+  $("#convertBtn").disabled = true;
+
+  const formData = new FormData();
+  formData.append("file", selectedFile);
+  formData.append("mode", currentMode);
+  formData.append("simplify", $("#simplify").value);
+  formData.append("colors", $("#colors").value);
+  const thresh = $("#threshold").value.trim();
+  if (thresh) formData.append("threshold", thresh);
+
+  try {
+    const resp = await fetch("/api/convert", { method: "POST", body: formData });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      toast(data.error || "Conversion failed", "error");
+      $("#emptyState").style.display = "";
+      return;
+    }
+
+    // Show SVG
+    const previewEl = $("#svgPreview");
+    previewEl.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = data.svg_url;
+    previewEl.appendChild(img);
+
+    // Stats
+    $("#statOriginal").textContent = fmtSize(data.original_size);
+    $("#statSvg").textContent = fmtSize(data.svg_size);
+    const ratio = ((data.svg_size / data.original_size) * 100).toFixed(0);
+    $("#statRatio").textContent = ratio + "%";
+
+    // Download
+    $("#downloadBtn").href = data.svg_url;
+    $("#downloadBtn").download = data.filename.replace(/\.\w+$/, ".svg");
+
+    // Copy handler
+    $("#copyBtn").onclick = () => {
+      navigator.clipboard.writeText(data.svg_content).then(
+        () => toast("SVG code copied to clipboard"),
+        () => toast("Copy failed", "error")
+      );
+    };
+
+    // Show result
+    $("#resultContent").classList.add("visible");
+    toast("Conversion complete");
+
+    // Add to history
+    history.unshift({
+      filename: data.filename,
+      mode: data.mode,
+      svg_url: data.svg_url,
+      svg_content: data.svg_content,
+      original_size: data.original_size,
+      svg_size: data.svg_size,
+      thumb: data.thumb,
+    });
+    renderHistory();
+
+  } catch (err) {
+    toast("Network error: " + err.message, "error");
+    $("#emptyState").style.display = "";
+  } finally {
+    $("#spinner").classList.remove("visible");
+    $("#convertBtn").disabled = false;
+  }
+});
+
+/* ================================================================== */
+/* History                                                            */
+/* ================================================================== */
+function renderHistory() {
+  const list = $("#historyList");
+  $("#historyCount").textContent = history.length;
+
+  if (!history.length) {
+    list.innerHTML = '<div style="color:var(--text-dim);font-size:13px;text-align:center;padding:20px 0;">No conversions yet</div>';
+    return;
+  }
+
+  list.innerHTML = history.map((h, i) => `
+    <div class="history-item" data-idx="${i}">
+      <img class="thumb" src="${h.thumb}" alt="">
+      <div class="details">
+        <div class="name">${h.filename}</div>
+        <div class="meta">${fmtSize(h.original_size)} &rarr; ${fmtSize(h.svg_size)}</div>
+      </div>
+      <span class="mode-tag">${h.mode}</span>
+    </div>
+  `).join("");
+
+  // Click to re-view
+  list.querySelectorAll(".history-item").forEach(el => {
+    el.addEventListener("click", () => {
+      const h = history[+el.dataset.idx];
+
+      $("#emptyState").style.display = "none";
+      $("#spinner").classList.remove("visible");
+
+      const previewEl = $("#svgPreview");
+      previewEl.innerHTML = "";
+      const img = document.createElement("img");
+      img.src = h.svg_url;
+      previewEl.appendChild(img);
+
+      $("#statOriginal").textContent = fmtSize(h.original_size);
+      $("#statSvg").textContent = fmtSize(h.svg_size);
+      const ratio = ((h.svg_size / h.original_size) * 100).toFixed(0);
+      $("#statRatio").textContent = ratio + "%";
+
+      $("#downloadBtn").href = h.svg_url;
+      $("#downloadBtn").download = h.filename.replace(/\.\w+$/, ".svg");
+      $("#copyBtn").onclick = () => {
+        navigator.clipboard.writeText(h.svg_content).then(
+          () => toast("SVG code copied to clipboard"),
+          () => toast("Copy failed", "error")
+        );
+      };
+
+      $("#resultContent").classList.add("visible");
+    });
+  });
+}
+</script>
+</body>
+</html>
